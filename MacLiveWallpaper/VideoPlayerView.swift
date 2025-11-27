@@ -62,45 +62,39 @@ class VideoPlayerView: NSView {
         let videoAsset = AVURLAsset(url: url)
         asset = videoAsset
 
-        // Check if asset is playable asynchronously
-        videoAsset.loadValuesAsynchronously(forKeys: ["playable", "duration"]) { [weak self] in
-            DispatchQueue.main.async {
-                self?.handleAssetLoaded(videoAsset)
-            }
+        // Check if asset is playable asynchronously using modern API
+        Task { @MainActor in
+            await self.loadAndValidateAsset(videoAsset)
         }
     }
 
-    private func handleAssetLoaded(_ videoAsset: AVURLAsset) {
-        var error: NSError?
-        let playableStatus = videoAsset.statusOfValue(forKey: "playable", error: &error)
-        let durationStatus = videoAsset.statusOfValue(forKey: "duration", error: nil)
+    @MainActor
+    private func loadAndValidateAsset(_ videoAsset: AVURLAsset) async {
+        do {
+            // Load playable and duration properties using new async API
+            let (isPlayable, duration) = try await videoAsset.load(.isPlayable, .duration)
 
-        // Check if asset loaded successfully
-        guard playableStatus == .loaded else {
-            print("Video not loadable: \(videoAsset.url.lastPathComponent), status: \(playableStatus.rawValue), error: \(error?.localizedDescription ?? "unknown")")
-            notifyPlaybackFailed()
-            return
-        }
+            // Check if asset is playable
+            guard isPlayable else {
+                print("Video not playable: \(videoAsset.url.lastPathComponent)")
+                notifyPlaybackFailed()
+                return
+            }
 
-        // Check if asset is playable
-        guard videoAsset.isPlayable else {
-            print("Video not playable: \(videoAsset.url.lastPathComponent)")
-            notifyPlaybackFailed()
-            return
-        }
-
-        // Check duration is valid (not zero or infinite)
-        if durationStatus == .loaded {
-            let duration = videoAsset.duration
+            // Check duration is valid (not zero or infinite)
             if !duration.isValid || duration.seconds <= 0 || duration.seconds.isNaN || duration.seconds.isInfinite {
                 print("Video has invalid duration: \(videoAsset.url.lastPathComponent)")
                 notifyPlaybackFailed()
                 return
             }
-        }
 
-        // Start actual playback
-        startPlayback(with: videoAsset)
+            // Start actual playback
+            startPlayback(with: videoAsset)
+
+        } catch {
+            print("Failed to load video asset: \(videoAsset.url.lastPathComponent), error: \(error.localizedDescription)")
+            notifyPlaybackFailed()
+        }
     }
 
     private func startPlayback(with videoAsset: AVURLAsset) {
@@ -262,15 +256,21 @@ class VideoPlayerView: NSView {
     }
 
     func cleanup() {
-        // Stop watchdog timer
+        safeCleanup(force: false)
+    }
+
+    /// Safe cleanup that won't crash during display changes
+    /// - Parameter force: If true, only clears references without calling any methods
+    private func safeCleanup(force: Bool) {
+        // Stop watchdog timer - this is always safe
         watchdogTimer?.invalidate()
         watchdogTimer = nil
 
-        // Remove notification observers
+        // Remove notification observers - this is always safe
         NotificationCenter.default.removeObserver(self, name: .AVPlayerItemFailedToPlayToEndTime, object: nil)
         NotificationCenter.default.removeObserver(self, name: .AVPlayerItemPlaybackStalled, object: nil)
 
-        // Remove KVO observers
+        // Remove KVO observers - this is always safe
         errorObserver?.invalidate()
         errorObserver = nil
         statusObserver?.invalidate()
@@ -280,27 +280,31 @@ class VideoPlayerView: NSView {
         itemStatusObserver?.invalidate()
         itemStatusObserver = nil
 
-        // 1. Stop playback first
-        queuePlayer?.pause()
+        if force {
+            // During display changes, just clear references - don't call any AVFoundation methods
+            playerLooper = nil
+            playerLayer = nil
+            queuePlayer = nil
+            asset = nil
+        } else {
+            // Normal cleanup - safe to call AVFoundation methods
+            queuePlayer?.pause()
+            playerLooper?.disableLooping()
+            playerLooper = nil
+            queuePlayer?.removeAllItems()
+            playerLayer?.player = nil
+            playerLayer?.removeFromSuperlayer()
+            playerLayer = nil
+            queuePlayer = nil
+            asset = nil
+        }
 
-        // 2. Disable looper BEFORE removing items
-        playerLooper?.disableLooping()
-        playerLooper = nil
-
-        // 3. Remove items from queue
-        queuePlayer?.removeAllItems()
-
-        // 4. Disconnect player from layer before removing
-        playerLayer?.player = nil
-        playerLayer?.removeFromSuperlayer()
-        playerLayer = nil
-
-        // 5. Release player and asset
-        queuePlayer = nil
-        asset = nil
-
-        // Reset state
         lastPlaybackTime = .zero
+    }
+
+    /// Force cleanup - just clear references, don't call any methods that might crash
+    func forceCleanup() {
+        safeCleanup(force: true)
     }
 
     var isPlaying: Bool {
@@ -329,6 +333,7 @@ class VideoPlayerView: NSView {
     }
 
     deinit {
-        cleanup()
+        // Use force cleanup in deinit - the display context may be invalid
+        safeCleanup(force: true)
     }
 }

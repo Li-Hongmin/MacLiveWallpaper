@@ -1,5 +1,12 @@
 import Cocoa
 import ServiceManagement
+import CoreGraphics
+
+// MARK: - App State Machine
+enum AppState {
+    case ready      // Safe to execute video operations
+    case paused     // System state unstable, video operations forbidden
+}
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -18,13 +25,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         app.delegate = delegate
         app.run()
     }
+
+    // MARK: - State Machine Properties
+    private var appState: AppState = .ready
+    private var pendingVideo: VideoAsset?
+    private var stateTransitionWorkItem: DispatchWorkItem?
+
+    // MARK: - UI Properties
     var windows: [WallpaperWindow] = []
     var playerViews: [VideoPlayerView] = []
     var statusItem: NSStatusItem!
     var currentVideo: VideoAsset?
     var aboutWindow: NSWindow?
-    private var screenChangeWorkItem: DispatchWorkItem?
-    private var refreshTimer: Timer?
 
     var launchAtLogin: Bool {
         get {
@@ -43,13 +55,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create windows for all screens
         createWindows()
 
-        // Observe screen configuration changes
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(screenConfigurationChanged),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
+        // CRITICAL: Register for display reconfiguration BEFORE it happens
+        // This is called BEFORE the display actually changes, giving us time to cleanup safely
+        CGDisplayRegisterReconfigurationCallback({ (displayID, flags, userInfo) in
+            guard let userInfo = userInfo else { return }
+            let appDelegate = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
+            appDelegate.handleDisplayReconfiguration(displayID: displayID, flags: flags)
+        }, Unmanaged.passUnretained(self).toOpaque())
+
+        // Sleep/wake events
+        let sleepWakeEvents: [(Notification.Name, NotificationCenter)] = [
+            (NSWorkspace.willSleepNotification, NSWorkspace.shared.notificationCenter),
+            (NSWorkspace.didWakeNotification, NSWorkspace.shared.notificationCenter),
+            (NSWorkspace.screensDidSleepNotification, NSWorkspace.shared.notificationCenter),
+            (NSWorkspace.screensDidWakeNotification, NSWorkspace.shared.notificationCenter),
+        ]
+
+        for (name, center) in sleepWakeEvents {
+            center.addObserver(
+                self,
+                selector: #selector(handleSystemEvent),
+                name: name,
+                object: nil
+            )
+        }
 
         // Listen for playback failures to auto-recover
         NotificationCenter.default.addObserver(
@@ -59,11 +88,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        // Refresh players every 10 minutes to prevent memory accumulation
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
-            self?.refreshVideoPlayers()
-        }
-
         // Try to resume last played video, otherwise play random
         if let lastVideo = VideoManager.shared.getLastPlayedVideo() {
             playVideo(video: lastVideo)
@@ -72,59 +96,78 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Handle display reconfiguration - called BEFORE and AFTER display changes
+    private func handleDisplayReconfiguration(displayID: CGDirectDisplayID, flags: CGDisplayChangeSummaryFlags) {
+        // BeginConfiguration: Display is ABOUT to change - we must cleanup NOW before it's too late
+        if flags.contains(.beginConfigurationFlag) {
+            print("Display BEGIN reconfiguration - cleaning up immediately")
+            // We're on the CoreGraphics callback thread, dispatch to main but DON'T wait
+            // Just clear references immediately to prevent any access to invalid display
+            DispatchQueue.main.async { [weak self] in
+                self?.emergencyCleanup()
+            }
+        }
+        // After configuration is complete, schedule recreation
+        else if !flags.contains(.beginConfigurationFlag) {
+            print("Display reconfiguration COMPLETE - scheduling recreation")
+            DispatchQueue.main.async { [weak self] in
+                self?.scheduleRecreation()
+            }
+        }
+    }
+
+    /// Emergency cleanup - just clear all references, don't call any methods
+    private func emergencyCleanup() {
+        guard appState == .ready else { return }
+        appState = .paused
+        print("Emergency cleanup - clearing all references")
+        // Just nil out everything - don't call any methods on these objects
+        windows = []
+        playerViews = []
+    }
+
+    /// Schedule recreation after display stabilizes
+    private func scheduleRecreation() {
+        stateTransitionWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.appState = .ready
+            print("Recreating windows and players")
+            self.recreateWindowsInternal()
+            if let video = self.pendingVideo {
+                self.pendingVideo = nil
+                self.playVideoInternal(video: video)
+            } else if let video = self.currentVideo {
+                self.playVideoInternal(video: video)
+            }
+        }
+        stateTransitionWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+    }
+
+    // MARK: - System Event Handler (Sleep/Wake only)
+
+    /// Handle sleep/wake events
+    @objc private func handleSystemEvent(_ notification: Notification) {
+        print("System event: \(notification.name.rawValue)")
+        emergencyCleanup()
+        scheduleRecreation()
+    }
+
     func createWindows() {
         // For initial creation, use the internal method directly
         recreateWindowsInternal()
     }
 
-    @objc func screenConfigurationChanged() {
-        // Cancel any pending recreation (debounce)
-        screenChangeWorkItem?.cancel()
-
-        // Pause all players immediately to prevent crashes during transition
+    /// Internal video play - bypasses state check, used by state machine
+    private func playVideoInternal(video: VideoAsset) {
+        print("Playing (internal): \(video.name)")
         for playerView in playerViews {
-            playerView.pause()
+            playerView.play(url: video.url)
         }
-
-        // Debounce: wait 1.0s before recreating windows (longer delay for stability)
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.safeCreateWindows()
-        }
-        screenChangeWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: workItem)
-    }
-
-    private func safeCreateWindows() {
-        // Double-check we're on main thread
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.safeCreateWindows()
-            }
-            return
-        }
-
-        // Store current video before cleanup
-        let videoToResume = currentVideo
-
-        // Clean up all players first, synchronously
-        for playerView in playerViews {
-            playerView.cleanup()
-        }
-
-        // Small delay to let AVFoundation settle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            guard let self = self else { return }
-
-            // Now recreate windows
-            self.recreateWindowsInternal()
-
-            // Resume video after windows are created
-            if let video = videoToResume {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self.playVideo(video: video)
-                }
-            }
-        }
+        currentVideo = video
+        VideoManager.shared.saveLastPlayedVideo(video)
+        updateMenu()
     }
 
     private func recreateWindowsInternal() {
@@ -261,21 +304,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         playRandomVideo()
     }
 
-    private func refreshVideoPlayers() {
-        guard let video = currentVideo else { return }
-        print("Refreshing video players to prevent memory accumulation")
-        for playerView in playerViews {
-            playerView.play(url: video.url)
-        }
-    }
-
     func playVideo(video: VideoAsset) {
+        // State guard - the single checkpoint for all video operations
+        guard appState == .ready else {
+            print("App not ready, queueing video: \(video.name)")
+            pendingVideo = video
+            currentVideo = video
+            VideoManager.shared.saveLastPlayedVideo(video)
+            return
+        }
+
         print("Playing: \(video.name)")
         for playerView in playerViews {
             playerView.play(url: video.url)
         }
         currentVideo = video
-        VideoManager.shared.saveLastPlayedVideo(video) // Save state
+        VideoManager.shared.saveLastPlayedVideo(video)
         updateMenu()
     }
 
