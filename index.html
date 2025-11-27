@@ -96,19 +96,38 @@
             padding-top: 40px;
         }
 
+        .app-icon {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 30px;
+            animation: fadeInDown 0.8s ease, float 4s ease-in-out infinite;
+            filter: drop-shadow(0 10px 30px rgba(0,0,0,0.3));
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         h1 {
             font-size: 4em;
             margin-bottom: 20px;
             font-weight: 800;
             letter-spacing: -2px;
-            animation: fadeInUp 0.8s ease;
+            animation: fadeInUp 0.8s ease 0.2s both;
         }
 
         .tagline {
             font-size: 1.5em;
             opacity: 0.95;
             font-weight: 300;
-            animation: fadeInUp 0.8s ease 0.2s both;
+            animation: fadeInUp 0.8s ease 0.4s both;
         }
 
         @keyframes fadeInUp {
@@ -375,6 +394,7 @@
 
     <div class="container">
         <header>
+            <img src="./assets/icon.png" alt="MacLiveWallpaper Icon" class="app-icon">
             <h1>MacLiveWallpaper</h1>
             <p class="tagline">Transform your desktop with stunning Aerial videos</p>
         </header>
