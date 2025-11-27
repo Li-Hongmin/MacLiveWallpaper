@@ -2,6 +2,16 @@
 
 Display macOS Aerial screensaver videos as live desktop wallpaper on all connected screens.
 
+<!-- Uncomment when demo video is ready
+## Demo
+
+https://github.com/user-attachments/assets/your-video-id-here
+
+*or use:*
+
+![Demo](./assets/demo.gif)
+-->
+
 ## Features
 
 - 🎬 Uses built-in macOS Aerial videos (no download required)
