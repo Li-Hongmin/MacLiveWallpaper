@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MacLiveWallpaper - Aerial Videos as Desktop Wallpaper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 60px;
+        }
+
+        h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .tagline {
+            font-size: 1.3em;
+            opacity: 0.9;
+        }
+
+        .hero {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 40px;
+        }
+
+        .download-btn {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 16px 40px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 1.2em;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 20px 10px;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .download-btn.secondary {
+            background: transparent;
+            border: 2px solid #667eea;
+            color: #667eea;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            margin: 40px 0;
+        }
+
+        .feature {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .feature h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.3em;
+        }
+
+        .feature-icon {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+        }
+
+        .requirements {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-top: 40px;
+        }
+
+        .requirements h2 {
+            margin-bottom: 15px;
+        }
+
+        .requirements ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .requirements li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+
+        .requirements li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            font-weight: bold;
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 60px;
+            opacity: 0.8;
+        }
+
+        footer a {
+            color: white;
+            text-decoration: underline;
+        }
+
+        .screenshot {
+            max-width: 100%;
+            border-radius: 8px;
+            margin: 30px 0;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MacLiveWallpaper</h1>
+            <p class="tagline">Transform your desktop with stunning Aerial videos</p>
+        </header>
+
+        <div class="hero">
+            <h2 style="text-align: center; margin-bottom: 20px;">Display macOS Aerial screensaver videos as live desktop wallpaper</h2>
+
+            <div style="text-align: center;">
+                <a href="https://github.com/Li-Hongmin/MacLiveWallpaper/releases/latest/download/MacLiveWallpaper-v1.0.zip" class="download-btn">
+                    Download v1.0
+                </a>
+                <a href="https://github.com/Li-Hongmin/MacLiveWallpaper" class="download-btn secondary">
+                    View on GitHub
+                </a>
+            </div>
+        </div>
+
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">🎬</div>
+                <h3>Built-in Videos</h3>
+                <p>Uses macOS's beautiful Aerial videos - no additional downloads required</p>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">🖥️</div>
+                <h3>Multi-Display</h3>
+                <p>Automatically detects and plays on all connected displays</p>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">🔄</div>
+                <h3>Smart Shuffle</h3>
+                <p>Random video rotation with manual selection option</p>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">⚡</div>
+                <h3>Lightweight</h3>
+                <p>Runs in the background with minimal resource usage</p>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">🎮</div>
+                <h3>Menu Bar Control</h3>
+                <p>Easy access to playback controls and settings</p>
+            </div>
+
+            <div class="feature">
+                <div class="feature-icon">🚀</div>
+                <h3>Launch at Login</h3>
+                <p>Start automatically when you log in</p>
+            </div>
+        </div>
+
+        <div class="requirements">
+            <h2>Requirements</h2>
+            <ul>
+                <li>macOS 14.0 (Sonoma) or later</li>
+                <li>Aerial videos downloaded via System Settings</li>
+            </ul>
+        </div>
+
+        <div class="requirements">
+            <h2>Installation</h2>
+            <ul>
+                <li>Download the latest release</li>
+                <li>Unzip the file</li>
+                <li>Drag MacLiveWallpaper.app to Applications</li>
+                <li>Launch and enjoy!</li>
+            </ul>
+            <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
+                Note: On first launch, right-click and select "Open" to bypass Gatekeeper.
+            </p>
+        </div>
+
+        <footer>
+            <p>Built with Swift and AVFoundation</p>
+            <p style="margin-top: 10px;">
+                <a href="https://github.com/Li-Hongmin/MacLiveWallpaper">GitHub</a> ·
+                <a href="https://github.com/Li-Hongmin/MacLiveWallpaper/releases">Releases</a> ·
+                <a href="https://github.com/Li-Hongmin/MacLiveWallpaper/issues">Issues</a>
+            </p>
+        </footer>
+    </div>
+</body>
+</html>
