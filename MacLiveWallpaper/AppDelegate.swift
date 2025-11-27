@@ -134,11 +134,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.appState = .ready
             print("Recreating windows and players")
             self.recreateWindowsInternal()
+
+            // CRITICAL: Always resume playback after recreation
+            // Priority: pendingVideo > currentVideo > random video
             if let video = self.pendingVideo {
                 self.pendingVideo = nil
                 self.playVideoInternal(video: video)
             } else if let video = self.currentVideo {
                 self.playVideoInternal(video: video)
+            } else {
+                // Fallback: if no video info, play random to ensure functionality
+                print("No video to resume, playing random")
+                if let randomVideo = VideoManager.shared.getRandomVideo() {
+                    self.playVideoInternal(video: randomVideo)
+                }
             }
         }
         stateTransitionWorkItem = workItem
@@ -217,10 +226,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        // Play/Pause
+        // App status indicator
+        if appState == .paused || playerViews.isEmpty {
+            let statusItem = NSMenuItem(title: "⏸ Paused (display changing...)", action: nil, keyEquivalent: "")
+            statusItem.isEnabled = false
+            menu.addItem(statusItem)
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        // Play/Pause (disable if not ready)
         let isPlaying = playerViews.first?.isPlaying ?? false
         let playPauseTitle = isPlaying ? "Pause" : "Play"
-        menu.addItem(NSMenuItem(title: playPauseTitle, action: #selector(togglePlayPause), keyEquivalent: " "))
+        let playPauseItem = NSMenuItem(title: playPauseTitle, action: #selector(togglePlayPause), keyEquivalent: " ")
+        playPauseItem.isEnabled = (appState == .ready && !playerViews.isEmpty)
+        menu.addItem(playPauseItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -273,6 +292,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func togglePlayPause() {
+        // Guard: only allow when app is ready and has players
+        guard appState == .ready, !playerViews.isEmpty else {
+            print("Cannot toggle play/pause - app not ready or no players")
+            return
+        }
+
         let isPlaying = playerViews.first?.isPlaying ?? false
         for playerView in playerViews {
             if isPlaying {
