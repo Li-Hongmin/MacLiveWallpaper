@@ -42,21 +42,26 @@ class VideoPlayerView: NSView {
         cleanup()
         hasReportedError = false
 
-        // Validate file exists and is readable
-        guard FileManager.default.fileExists(atPath: url.path),
-              FileManager.default.isReadableFile(atPath: url.path) else {
-            print("Video file not accessible: \(url.path)")
-            notifyPlaybackFailed()
-            return
-        }
+        // For local files (file:// URLs), validate file exists
+        if url.isFileURL {
+            guard FileManager.default.fileExists(atPath: url.path),
+                  FileManager.default.isReadableFile(atPath: url.path) else {
+                print("Video file not accessible: \(url.path)")
+                notifyPlaybackFailed()
+                return
+            }
 
-        // Check file size - skip files smaller than 1MB (likely incomplete)
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? Int64,
-           size < 1_000_000 {
-            print("Video file too small (likely incomplete): \(url.lastPathComponent)")
-            notifyPlaybackFailed()
-            return
+            // Check file size - skip files smaller than 1MB (likely incomplete)
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let size = attrs[.size] as? Int64,
+               size < 1_000_000 {
+                print("Video file too small (likely incomplete): \(url.lastPathComponent)")
+                notifyPlaybackFailed()
+                return
+            }
+        } else {
+            // For streaming URLs, just log
+            print("Playing streaming video: \(url.absoluteString)")
         }
 
         let videoAsset = AVURLAsset(url: url)

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Network Access for Streaming Videos -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- Allow outgoing network connections -->
+	<key>com.apple.security.network.server</key>
+	<false/>
+
+	<!-- App Sandbox (REQUIRED for App Store) -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Files - Read Only for system Aerial resources (development fallback) -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+</dict>
+</plist>

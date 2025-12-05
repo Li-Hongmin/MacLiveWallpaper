@@ -37,6 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var currentVideo: VideoAsset?
     var aboutWindow: NSWindow?
+    var selectorWindow: VideoSelectorWindow?
 
     var launchAtLogin: Bool {
         get {
@@ -51,6 +52,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Setup Menu Bar first
         setupMenuBar()
+
+        // Create video selector window (lifecycle = app lifecycle)
+        selectorWindow = VideoSelectorWindow()
 
         // Create windows for all screens
         createWindows()
@@ -88,6 +92,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        // Listen for video selection from selector window
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleVideoSelected),
+            name: NSNotification.Name("VideoSelected"),
+            object: nil
+        )
+
         // Try to resume last played video, otherwise play random
         if let lastVideo = VideoManager.shared.getLastPlayedVideo() {
             playVideo(video: lastVideo)
@@ -100,27 +112,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleDisplayReconfiguration(displayID: CGDirectDisplayID, flags: CGDisplayChangeSummaryFlags) {
         // BeginConfiguration: Display is ABOUT to change - we must cleanup NOW before it's too late
         if flags.contains(.beginConfigurationFlag) {
-            print("Display BEGIN reconfiguration - cleaning up immediately")
+            print("Display BEGIN reconfiguration - cleaning up and scheduling recreation")
             // We're on the CoreGraphics callback thread, dispatch to main but DON'T wait
             // Just clear references immediately to prevent any access to invalid display
             DispatchQueue.main.async { [weak self] in
                 self?.emergencyCleanup()
-            }
-        }
-        // After configuration is complete, schedule recreation
-        else if !flags.contains(.beginConfigurationFlag) {
-            print("Display reconfiguration COMPLETE - scheduling recreation")
-            DispatchQueue.main.async { [weak self] in
+                // Schedule recreation immediately after cleanup
+                // This ensures we rebuild once after the display configuration completes
                 self?.scheduleRecreation()
             }
         }
+        // Ignore other callbacks to avoid multiple recreations
     }
 
     /// Emergency cleanup - just clear all references, don't call any methods
     private func emergencyCleanup() {
-        guard appState == .ready else { return }
+        guard appState == .ready else {
+            print("Emergency cleanup skipped - already in state: \(appState)")
+            return
+        }
         appState = .paused
-        print("Emergency cleanup - clearing all references")
+        print("Emergency cleanup - clearing all references (windows: \(windows.count), players: \(playerViews.count))")
         // Just nil out everything - don't call any methods on these objects
         windows = []
         playerViews = []
@@ -129,24 +141,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Schedule recreation after display stabilizes
     private func scheduleRecreation() {
         stateTransitionWorkItem?.cancel()
+        print("Scheduling recreation in 2 seconds...")
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else {
+                print("Recreation cancelled - self is nil")
+                return
+            }
+            print("Recreation starting - changing state from \(self.appState) to ready")
             self.appState = .ready
-            print("Recreating windows and players")
+            print("Recreating windows and players for \(NSScreen.screens.count) screen(s)")
             self.recreateWindowsInternal()
+
+            print("After recreation - windows: \(self.windows.count), players: \(self.playerViews.count)")
 
             // CRITICAL: Always resume playback after recreation
             // Priority: pendingVideo > currentVideo > random video
             if let video = self.pendingVideo {
+                print("Resuming pending video: \(video.name)")
                 self.pendingVideo = nil
                 self.playVideoInternal(video: video)
             } else if let video = self.currentVideo {
+                print("Resuming current video: \(video.name)")
                 self.playVideoInternal(video: video)
             } else {
                 // Fallback: if no video info, play random to ensure functionality
                 print("No video to resume, playing random")
                 if let randomVideo = VideoManager.shared.getRandomVideo() {
                     self.playVideoInternal(video: randomVideo)
+                } else {
+                    print("ERROR: No videos available to play!")
                 }
             }
         }
@@ -195,10 +218,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Create a window and player view for each screen
         for (index, screen) in screens.enumerated() {
-            print("Creating window \(index + 1) on screen at origin: \(screen.frame.origin)")
+            print("Creating window \(index + 1) on screen at origin: \(screen.frame.origin), size: \(screen.frame.size)")
 
             let window = WallpaperWindow(screen: screen)
-            guard let contentView = window.contentView else { continue }
+            guard let contentView = window.contentView else {
+                print("ERROR: Failed to get contentView for window \(index + 1)")
+                continue
+            }
 
             let playerView = VideoPlayerView(frame: contentView.bounds)
             playerView.autoresizingMask = [.width, .height]
@@ -209,7 +235,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Order window after adding to arrays
             window.orderBack(nil)
+            print("Window \(index + 1) created and ordered, playerView bounds: \(playerView.bounds)")
         }
+
+        print("Recreation complete - total windows: \(windows.count), total players: \(playerViews.count)")
+
+        // Update menu immediately to reflect new state
+        updateMenu()
     }
 
     func setupMenuBar() {
@@ -226,8 +258,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
+        // Check if videos are available
+        let videos = VideoManager.shared.getAllVideos()
+        let hasVideos = !videos.isEmpty
+
         // App status indicator
-        if appState == .paused || playerViews.isEmpty {
+        if !hasVideos {
+            let statusItem = NSMenuItem(title: "⚠️ No Aerial Videos Found", action: nil, keyEquivalent: "")
+            statusItem.isEnabled = false
+            menu.addItem(statusItem)
+
+            let helpItem = NSMenuItem(title: "How to Download Videos...", action: #selector(showDownloadHelp), keyEquivalent: "")
+            menu.addItem(helpItem)
+            menu.addItem(NSMenuItem.separator())
+        } else if appState == .paused || playerViews.isEmpty {
             let statusItem = NSMenuItem(title: "⏸ Paused (display changing...)", action: nil, keyEquivalent: "")
             statusItem.isEnabled = false
             menu.addItem(statusItem)
@@ -252,24 +296,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Video Selection Submenu
-        let videosMenu = NSMenu()
-        let videosItem = NSMenuItem(title: "Select Video", action: nil, keyEquivalent: "")
-        videosItem.submenu = videosMenu
-        menu.addItem(videosItem)
-
-        let videos = VideoManager.shared.getAllVideos()
-        for video in videos {
-            let item = NSMenuItem(title: video.name, action: #selector(selectVideo(_:)), keyEquivalent: "")
-            item.representedObject = video
-            if video.url == currentVideo?.url {
-                item.state = .on
-            }
-            videosMenu.addItem(item)
+        // Browse Videos Window (only if videos available)
+        if hasVideos {
+            menu.addItem(NSMenuItem(title: "Browse All Videos...", action: #selector(showVideoSelector), keyEquivalent: "b"))
+            menu.addItem(NSMenuItem.separator())
         }
 
-        // Next Random
-        menu.addItem(NSMenuItem(title: "Next Random Wallpaper", action: #selector(playRandomVideo), keyEquivalent: "n"))
+        // Video Selection Submenu (only if videos available)
+        if hasVideos {
+            let videosMenu = NSMenu()
+            let videosItem = NSMenuItem(title: "Select Video", action: nil, keyEquivalent: "")
+            videosItem.submenu = videosMenu
+            menu.addItem(videosItem)
+
+            for video in videos {
+                let item = NSMenuItem(title: video.name, action: #selector(selectVideo(_:)), keyEquivalent: "")
+                item.representedObject = video
+                if video.url == currentVideo?.url {
+                    item.state = .on
+                }
+                videosMenu.addItem(item)
+            }
+
+            // Next Random
+            menu.addItem(NSMenuItem(title: "Next Random Wallpaper", action: #selector(playRandomVideo), keyEquivalent: "n"))
+        }
 
         menu.addItem(NSMenuItem.separator())
 
@@ -368,6 +419,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else {
             print("Launch at login requires macOS 13.0 or later")
+        }
+    }
+
+    @objc func showVideoSelector() {
+        // Window created at app launch, just show it
+        guard let window = selectorWindow else {
+            print("ERROR: Selector window not initialized")
+            return
+        }
+
+        // Show and bring to front
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func handleVideoSelected(_ notification: Notification) {
+        if let video = notification.object as? VideoAsset {
+            playVideo(video: video)
+        }
+    }
+
+    @objc func showDownloadHelp() {
+        let alert = NSAlert()
+        alert.messageText = "Aerial Videos Not Found"
+        alert.informativeText = """
+        MacLiveWallpaper requires macOS Aerial screensaver videos to work.
+
+        To download them:
+        1. Open System Settings
+        2. Go to "Screen Saver"
+        3. Select "Aerial" screensaver
+        4. Wait for videos to download
+        5. Restart MacLiveWallpaper
+
+        Videos are saved to:
+        /Library/Application Support/com.apple.idleassetsd/Customer/
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Open System Settings")
+
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            // Open Screen Saver settings
+            if let url = URL(string: "x-apple.systempreferences:com.apple.ScreenSaver-Settings.extension") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 

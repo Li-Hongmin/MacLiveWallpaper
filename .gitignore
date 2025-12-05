@@ -1,0 +1,38 @@
+# Xcode
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+project.xcworkspace/xcuserdata/
+xcshareddata/
+*.xcschemes
+xcschememanagement.plist
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build artifacts
+build/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# CocoaPods
+Pods/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# Backup files
+*.orig
+*.bak
+*~
